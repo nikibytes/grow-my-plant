@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comment Garden</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Work+Sans:wght@400;500;600&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --moss: #5C7A46;
+            --moss-light: #8FAE6C;
+            --moss-dark: #3E5730;
+            --bark: #6E4C33;
+            --bark-dark: #47301E;
+            --amber: #D89B3E;
+            --amber-soft: #F0C878;
+            --ink: #241C12;
+
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: \'Work Sans\', sans-serif;
+            color: #fff;
+        }
+
+        .app {
+            position: relative;
+            min-height: 100vh;
+            overflow: hidden;
+            background: #060714;
+            --hill-far: #B7C98C;
+            --hill-near: #93A968;
+            --ground-top: #8A6239;
+            --ground-bottom: #4B3220;
+
+        }
+
+        .app[data-phase="night"] {
+            --hill-far: #1B1330;
+            --hill-near: #110B22;
+            --ground-top: #3A2A22;
+            --ground-bottom: #1C140F;
+
+        }
+
+        .sky-day,
+        .sky-night {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            transition: opacity 1.2s ease;
+        }
+
+        .sky-day {
+            background: linear-gradient(to bottom, #4695CE 0%, #8BC7E8 42%, #CFE9DD 75%, #F5E7B4 100%);
+            opacity: 1;
+        }
+
+        .sky-night {
+            background: linear-gradient(to bottom, #080B24 0%, #241642 45%, #4B2560 78%, #6B3566 100%);
+            opacity: 0;
+        }
+
+        .app[data-phase="night"] .sky-day {
+            opacity: 0;
+        }
+
+        .app[data-phase="night"] .sky-night {
+            opacity: 1;
+        }
+
+        .grain {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            pointer-events: none;
+            opacity: .05;
+            mix-blend-mode: multiply;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'140\' height=\'140\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.85\' numOctaves=\'2\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\'/%3E%3C/svg%3E");
+        }
+
+        .stars {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            opacity: 0;
+            transition: opacity 1.2s ease;
+            pointer-events: none;
+        }
+
+        .app[data-phase="night"] .stars {
+            opacity: 1;
+        }
+
+        .star {
+            position: absolute;
+            background: #fff;
+            border-radius: 50%;
+            animation: twinkle 3s ease-in-out infinite;
+        }
+
+        @keyframes twinkle {
+
+            0%,
+            100% {
+                opacity: .25;
+            }
+
+            50% {
+                opacity: 1;
+            }
+        }
+
+        .sun {
+            position: absolute;
+            top: 9vh;
+            right: 7vw;
+            width: 88px;
+            height: 88px;
+            border-radius: 50%;
+            z-index: 2;
+            background: radial-gradient(circle, #FFF3CE 0%, #FFE79A 45%, #FDCB6B 100%);
+            box-shadow: 0 0 60px 20px rgba(255, 222, 140, .55);
+            transition: opacity 1.2s ease;
+            opacity: 1;
+        }
+
+        .moon {
+            position: absolute;
+            top: 7vh;
+            left: 7vw;
+            width: 66px;
+            height: 66px;
+            border-radius: 50%;
+            z-index: 2;
+            background: #E8E4F0;
+            box-shadow: inset -16px -6px 0 0 #B9B4CC, 0 0 40px 10px rgba(180, 170, 220, .35);
+            transition: opacity 1.2s ease;
+            opacity: 0;
+        }
+
+        .app[data-phase="night"] .sun {
+            opacity: 0;
+        }
+
+        .app[data-phase="night"] .moon {
+            opacity: 1;
+        }
+
+        .hills {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 20vh;
+            height: 14vh;
+            z-index: 3;
+        }
+
+        .hills svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .hill-far {
+            fill: var(--hill-far);
+            transition: fill 1.2s ease;
+        }
+
+        .hill-near {
+            fill: var(--hill-near);
+            transition: fill 1.2s ease;
+        }
+
+        .ground {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 20vh;
+            z-index: 4;
+            background: linear-gradient(to bottom, var(--ground-top), var(--ground-bottom));
+            transition: background 1.2s ease;
+        }
+
+        .ground::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image: radial-gradient(circle, rgba(255, 255, 255, .15) 1px, transparent 1.5px);
+            background-size: 14px 14px;
+            opacity: .25;
+        }
+
+        .fireflies {
+            position: absolute;
+            inset: 0;
+            z-index: 5;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 1.2s ease;
+        }
+
+        .app[data-phase="night"] .fireflies {
+            opacity: 1;
+        }
+
+        .firefly {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: radial-gradient(circle, #F4E98C 0%, rgba(244, 233, 140, 0) 70%);
+            box-shadow: 0 0 8px 3px rgba(244, 233, 140, .6);
+        }
+
+        .firefly.a {
+            animation: glow 2.4s ease-in-out infinite, driftA 9s ease-in-out infinite;
+        }
+
+        .firefly.b {
+            animation: glow 2.1s ease-in-out infinite, driftB 11s ease-in-out infinite;
+        }
+
+        .firefly.c {
+            animation: glow 2.7s ease-in-out infinite, driftC 8s ease-in-out infinite;
+        }
+
+        @keyframes glow {
+
+            0%,
+            100% {
+                opacity: .3;
+            }
+
+            50% {
+                opacity: 1;
+            }
+        }
+
+        @keyframes driftA {
+            0% {
+                transform: translate(0, 0);
+            }
+
+            25% {
+                transform: translate(30px, -20px);
+            }
+
+            50% {
+                transform: translate(10px, -45px);
+            }
+
+            75% {
+                transform: translate(-25px, -15px);
+            }
+
+            100% {
+                transform: translate(0, 0);
+            }
+        }
+
+        @keyframes driftB {
+            0% {
+                transform: translate(0, 0);
+            }
+
+            30% {
+                transform: translate(-35px, -10px);
+            }
+
+            60% {
+                transform: translate(-10px, -40px);
+            }
+
+            100% {
+                transform: translate(0, 0);
+            }
+        }
+
+        @keyframes driftC {
+            0% {
+                transform: translate(0, 0);
+            }
+
+            20% {
+                transform: translate(20px, 15px);
+            }
+
+            55% {
+                transform: translate(45px, -20px);
+            }
+
+            100% {
+                transform: translate(0, 0);
+            }
+        }
+
+        .day-critters {
+            position: absolute;
+            inset: 0;
+            z-index: 5;
+            pointer-events: none;
+            opacity: 1;
+            transition: opacity 1.2s ease;
+        }
+
+        .app[data-phase="night"] .day-critters {
+            opacity: 0;
+        }
+
+        .butterfly {
+            position: absolute;
+            width: 22px;
+            height: 18px;
+        }
+
+        .butterfly svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .butterfly.b1 {
+            animation: flutterPath1 16s ease-in-out infinite;
+        }
+
+        .butterfly.b2 {
+            animation: flutterPath2 13s ease-in-out infinite;
+        }
+
+        .butterfly .wing {
+            animation: flap .5s ease-in-out infinite;
+            transform-origin: center;
+        }
+
+        @keyframes flap {
+
+            0%,
+            100% {
+                transform: scaleX(1);
+            }
+
+            50% {
+                transform: scaleX(.45);
+            }
+        }
+
+        @keyframes flutterPath1 {
+            0% {
+                transform: translate(0, 0) rotate(0deg);
+            }
+
+            25% {
+                transform: translate(70px, -40px) rotate(8deg);
+            }
+
+            50% {
+                transform: translate(140px, 0px) rotate(-6deg);
+            }
+
+            75% {
+                transform: translate(70px, 50px) rotate(4deg);
+            }
+
+            100% {
+                transform: translate(0, 0) rotate(0deg);
+            }
+        }
+
+        @keyframes flutterPath2 {
+            0% {
+                transform: translate(0, 0) rotate(0deg);
+            }
+
+            30% {
+                transform: translate(-60px, 30px) rotate(-8deg);
+            }
+
+            60% {
+                transform: translate(-110px, -20px) rotate(6deg);
+            }
+
+            100% {
+                transform: translate(0, 0) rotate(0deg);
+            }
+        }
+
+        .ladybug {
+            position: absolute;
+            bottom: 6vh;
+            left: 37%;
+            width: 18px;
+            height: 14px;
+            animation: crawl 10s ease-in-out infinite;
+        }
+
+        .ladybug svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        @keyframes crawl {
+
+            0%,
+            100% {
+                transform: translateX(0);
+            }
+
+            50% {
+                transform: translateX(46px);
+            }
+        }
+
+        .title-block {
+            position: relative;
+            z-index: 10;
+            text-align: center;
+            padding: 2.2rem 1rem 0;
+        }
+
+        .title-block h1 {
+            font-family: \'Fraunces\', serif;
+            font-weight: 600;
+            font-size: clamp(24px, 4vw, 34px);
+            margin: 0;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, .35);
+        }
+
+        .subtitle {
+            font-size: 13px;
+            margin: .4rem 0 0;
+            color: rgba(255, 255, 255, .88);
+            text-shadow: 0 1px 6px rgba(0, 0, 0, .3);
+        }
+
+        .subtitle strong {
+            font-weight: 600;
+        }
+
+        .contrib-card {
+            position: absolute;
+            top: 20vh;
+            left: clamp(1rem, 3vw, 2.5rem);
+            width: 230px;
+            z-index: 10;
+            background: rgba(20, 18, 30, .42);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, .18);
+            border-radius: 14px;
+            padding: 1rem 1.1rem;
+        }
+
+        .contrib-card h2 {
+            font-family: \'Fraunces\', serif;
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0 0 6px;
+        }
+
+        .contrib-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            color: rgba(255, 255, 255, .6);
+            margin: 0 0 8px;
+        }
+
+        .contrib-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+        }
+
+        .contrib-row {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            font-size: 13px;
+        }
+
+        .contrib-avatar {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: \'Fraunces\', serif;
+            font-size: 12px;
+            font-weight: 600;
+            color: #241C12;
+            flex-shrink: 0;
+        }
+
+        .contrib-handle {
+            flex: 1;
+            font-family: \'Fraunces\', serif;
+            font-style: italic;
+        }
+
+        .contrib-count {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, .75);
+        }
+
+        .contrib-count svg {
+            width: 11px;
+            height: 11px;
+        }
+
+        .controls {
+            position: absolute;
+            top: 1.25rem;
+            right: 1.25rem;
+            z-index: 10;
+            display: flex;
+            gap: 8px;
+        }
+
+        .ctrl-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(20, 18, 30, .42);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, .22);
+            color: #fff;
+            font-family: \'Work Sans\', sans-serif;
+            font-size: 12px;
+            padding: 7px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+        }
+
+        .ctrl-btn:hover {
+            background: rgba(20, 18, 30, .62);
+        }
+
+        .phase-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #FFE79A;
+        }
+
+        .app[data-phase="night"] .phase-dot {
+            background: #E8E4F0;
+        }
+
+        .plant-wrap {
+            position: absolute;
+            left: 50%;
+            bottom: 14vh;
+            transform: translateX(-50%);
+            width: min(560px, 90vw);
+            z-index: 6;
+        }
+
+        svg#plant {
+            width: 100%;
+            height: auto;
+            display: block;
+            overflow: visible;
+            filter: drop-shadow(0 8px 16px rgba(0, 0, 0, .28));
+            transition: filter 1.2s ease;
+        }
+
+        .app[data-phase="night"] svg#plant {
+            filter: drop-shadow(0 8px 16px rgba(0, 0, 0, .45)) drop-shadow(0 0 26px rgba(139, 127, 219, .28));
+        }
+
+        .leaf {
+            cursor: pointer;
+        }
+
+        .leaf:hover,
+        .leaf:focus-visible {
+            filter: drop-shadow(0 0 6px var(--amber));
+            outline: none;
+        }
+
+        .leaf path.blade {
+            transition: transform .3s cubic-bezier(.34, 1.56, .64, 1);
+            transform-box: fill-box;
+            transform-origin: center;
+        }
+
+        .leaf:hover path.blade,
+        .leaf:focus-visible path.blade {
+            transform: scale(1.12);
+        }
+
+        .leaf text {
+            font-family: \'Fraunces\', serif;
+            font-style: italic;
+            font-size: 12px;
+            fill: #fff;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity .2s ease;
+        }
+
+        .leaf:hover text,
+        .leaf:focus-visible text,
+        .leaf.active text {
+            opacity: 1;
+        }
+
+        .leaf-body.new-leaf {
+            animation: sprout .6s cubic-bezier(.34, 1.56, .64, 1) both;
+            transform-box: fill-box;
+            transform-origin: center;
+        }
+
+        @keyframes sprout {
+            from {
+                transform: scale(0);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .tooltip {
+            position: fixed;
+            max-width: 200px;
+            background: #1B1420;
+            color: #F5EEDD;
+            font-size: 12.5px;
+            padding: 8px 11px;
+            border-radius: 6px;
+            pointer-events: none;
+            opacity: 0;
+            transform: translate(-50%, -100%);
+            transition: opacity .15s ease;
+            z-index: 50;
+            line-height: 1.4;
+        }
+
+        .tooltip.show {
+            opacity: 1;
+        }
+
+        .tooltip .name {
+            font-family: \'Fraunces\', serif;
+            font-style: italic;
+            display: block;
+            margin-bottom: 2px;
+            color: var(--amber-soft);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+
+            .star,
+            .firefly,
+            .butterfly,
+            .ladybug {
+                animation: none !important;
+            }
+
+            .leaf,
+            .leaf path.blade {
+                transition: none !important;
+            }
+
+
+        }
+
+        @media (max-width:700px) {
+            .contrib-card {
+                position: static;
+                margin: 1rem auto 0;
+                width: min(320px, 92vw);
+            }
+
+            .controls {
+                top: .75rem;
+                right: .75rem;
+            }
+
+            .plant-wrap {
+                bottom: 15vh;
+            }
+
+
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app" id="app" data-phase="day">
+        <div class="sky-day"></div>
+        <div class="sky-night"></div>
+        <div class="grain"></div>
+        <div class="stars" id="stars"></div>
+        <div class="sun"></div>
+        <div class="moon">
+        </div>
+        <div class="hills"> <svg viewBox="0 0 1200 200" preserveAspectRatio="none">
+                <path class="hill-far"
+                    d="M0,120 C150,80 300,140 450,100 C600,60 750,130 900,90 C1000,70 1100,110 1200,90 L1200,200 L0,200 Z" />
+
+                <path class="hill-near"
+                    d="M0,160 C180,120 320,170 480,140 C650,110 800,165 960,130 C1080,105 1150,140 1200,130 L1200,200 L0,200 Z" />
+
+            </svg> </div>
+        <div class="ground"></div>
+        <div class="fireflies">
+            <div class="firefly a" style="top:64%; left:22%;"></div>
+            <div class="firefly b" style="top:70%; left:58%;"></div>
+            <div class="firefly c" style="top:56%; left:70%;"></div>
+        </div>
+        <div class="day-critters">
+            <div class="butterfly b1" style="top:20vh; left:14%;"> <svg viewBox="0 0 20 16">
+                    <path class="wing" fill="var(--amber)" d="M10,8 C6,0 -2,2 2,8 C-2,14 6,16 10,8 Z" />
+                    <path class="wing" fill="var(--amber)" d="M10,8 C14,0 22,2 18,8 C22,14 14,16 10,8 Z" />
+                    <line x1="10" y1="2" x2="10" y2="14" stroke="#241C12" stroke-width="1" />
+                </svg> </div>
+            <div class="butterfly b2" style="top:26vh; right:16%;"> <svg viewBox="0 0 20 16">
+                    <path class="wing" fill="var(--moss-light)" d="M10,8 C6,0 -2,2 2,8 C-2,14 6,16 10,8 Z" />
+                    <path class="wing" fill="var(--moss-light)" d="M10,8 C14,0 22,2 18,8 C22,14 14,16 10,8 Z" />
+                    <line x1="10" y1="2" x2="10" y2="14" stroke="#241C12" stroke-width="1" />
+                </svg> </div>
+            <div class="ladybug"> <svg viewBox="0 0 18 14">
+                    <ellipse cx="9" cy="8" rx="8" ry="6" fill="#C0392B" />
+                    <path d="M9,2 L9,14" stroke="#241C12" stroke-width="1" />
+                    <circle cx="9" cy="4" r="3" fill="#241C12" />
+                    <circle cx="5" cy="7" r="1.2" fill="#241C12" />
+                    <circle cx="13" cy="7" r="1.2" fill="#241C12" />
+                    <circle cx="6" cy="11" r="1.1" fill="#241C12" />
+                    <circle cx="12" cy="11" r="1.1" fill="#241C12" />
+                </svg> </div>
+        </div>
+        <div class="title-block">
+            <h1>Comment Garden</h1>
+            <p class="subtitle">
+                current stage: <strong id="stageText">young tree</strong> &middot; <span id="countText">16</span> leaves
+                grown &middot; <span id="milestoneText">next milestone 28 leaves</span></p>
+        </div>
+        <div class="contrib-card">
+            <h2>Leaf contributors</h2>
+            <p class="contrib-label">top contributors</p>
+            <ul class="contrib-list" id="contribList"></ul>
+        </div>
+        <div class="controls"> <button class="ctrl-btn" id="phaseToggle"><span class="phase-dot"></span><span
+                    id="phaseLabel">preview
+                    night</span></button> <button class="ctrl-btn" id="simulateBtn">+ simulate a comment</button>
+        </div>
+        <div class="plant-wrap"> <svg id="plant" viewBox="0 0 640 700" role="img"
+                aria-label="An illustrated tree whose leaves each carry the name of someone who commented">
+                <ellipse cx="320" cy="672" rx="150" ry="16" fill="#000" opacity="0.12" />
+                <path d="M270,680 C275,660 300,650 320,650 C340,650 365,660 372,680 Z" fill="var(--bark-dark)"
+                    opacity="0.5" />
+                <path d="M300,680 C293,600 298,520 312,462 C316,442 326,442 330,462 C344,520 349,600 342,680 Z"
+                    fill="var(--bark)" />
+                <path d="M312,680 C308,610 311,540 318,470" stroke="var(--bark-dark)" stroke-width="2" fill="none"
+                    opacity="0.4" />
+                <path d="M300,682 C280,690 260,696 244,696" stroke="var(--bark-dark)" stroke-width="2" fill="none"
+                    opacity="0.35" />
+                <path d="M340,682 C360,690 382,695 398,694" stroke="var(--bark-dark)" stroke-width="2" fill="none"
+                    opacity="0.35" />
+                <g id="branches" stroke="var(--bark)" fill="none" stroke-linecap="round"></g>
+                <g id="foliageBack"></g>
+                <g id="leaves"></g>
+            </svg> </div>
+    </div>
+    <div class="tooltip" id="tooltip"><span class="name" id="ttName"></span><span id="ttComment"></span></div>
+    <script>
+        (function () {
+            const NS = "http://www.w3.org/2000/svg";
+
+            // --- DOM Elements ---
+            const app = document.getElementById('app');
+            const branchesG = document.getElementById('branches');
+            const leavesG = document.getElementById('leaves');
+            const foliageBackG = document.getElementById('foliageBack');
+            const tooltip = document.getElementById('tooltip');
+            const ttName = document.getElementById('ttName');
+            const ttComment = document.getElementById('ttComment');
+            const stageText = document.getElementById('stageText');
+            const countText = document.getElementById('countText');
+            const milestoneText = document.getElementById('milestoneText');
+            const simulateBtn = document.getElementById('simulateBtn');
+            const contribList = document.getElementById('contribList');
+            const starsEl = document.getElementById('stars');
+
+            // --- Constant Data Definitions ---
+            const branches = [
+                { d: "M320,470 C250,430 190,390 132,308", w: 11 },
+                { d: "M322,452 C382,414 440,368 482,286", w: 11 },
+                { d: "M318,502 C262,486 214,466 162,428", w: 8 },
+                { d: "M326,502 C388,486 438,466 492,436", w: 8 },
+                { d: "M320,442 C320,384 316,326 302,254", w: 9 },
+                { d: "M324,442 C331,384 347,332 372,262", w: 9 },
+                { d: "M317,512 C298,542 270,556 240,562", w: 6 },
+                { d: "M327,512 C347,542 377,556 407,562", w: 6 }
+            ];
+
+            const leafPath = "M0,-14 C7,-9 8,3 0,15 C-8,3 -7,-9 0,-14 Z";
+            const veinPath = "M0,-11 L0,11";
+
+            const ambient = [
+                [160, 270, -10, 0.9], [340, 168, 15, 0.85], [440, 268, -20, 0.9], [300, 178, 8, 0.8],
+                [222, 350, -15, 0.85], [380, 350, 18, 0.85], [282, 420, -8, 0.8], [352, 238, 12, 0.85],
+                [190, 470, 20, 0.75], [440, 460, -15, 0.75]
+            ];
+
+            const names = [
+                "priya.codes", "wanderlust_arjun", "meera.writes", "dev_exploring",
+                "sana.creates", "kabir_learns", "ananya.ai", "ritesh_builds",
+                "nisha.grows", "vikram.reads", "isha_dreams", "aditya.codes",
+                "tara.makes", "rohan_thinks", "zara.designs", "yash_explores"
+            ];
+
+            const shortNames = [
+                "priya", "arjun", "meera", "dev", "sana", "kabir", "ananya", "ritesh",
+                "nisha", "vikram", "isha", "aditya", "tara", "rohan", "zara", "yash"
+            ];
+
+            const comments = [
+                "this is such a good idea", "came back just to watch it grow", "my leaf!! love this so much",
+                "okay this is actually genius", "checking on my leaf daily now", "the little details here are so nice",
+                "never seen a comment section like this", "this made my whole week", "so wholesome, more of this please",
+                "watching the canopy fill up is addictive", "best use of a comment section ever", "this deserves way more attention",
+                "i want a leaf like this everywhere", "the tag detail is such a nice touch", "tell me you're a plant person without telling me",
+                "this is what the internet should feel like"
+            ];
+
+            const positions = [
+                [150, 300], [180, 238], [128, 362], [210, 178], [260, 148], [310, 138], [360, 153], [410, 188],
+                [452, 240], [470, 300], [430, 362], [200, 420], [400, 432], [250, 480], [370, 480], [320, 198]
+            ];
+
+            const angles = [-20, 15, -40, 5, -10, 20, -15, 10, -25, 15, -10, 30, -30, 10, -20, 0];
+
+            const reserveNames = ["neha.sparks", "aman_grows", "diya.codes", "kunal_writes"];
+            const reserveShort = ["neha", "aman", "diya", "kunal"];
+            const reserveComments = [
+                "late to this but wow", "adding my name to the tree today",
+                "this is the nicest thing on my feed", "officially part of the garden now"
+            ];
+            const reservePositions = [[170, 418], [430, 418], [290, 158], [240, 300]];
+            const reserveAngles = [-15, 20, -5, 25];
+
+            const STAGES = [
+                { name: 'seed', min: 0 },
+                { name: 'sprout', min: 1 },
+                { name: 'sapling', min: 5 },
+                { name: 'young tree', min: 12 },
+                { name: 'full tree', min: 28 }
+            ];
+
+            const contributors = [
+                { handle: "starlight_seer", count: 4, initial: "S", color: "var(--amber)" },
+                { handle: "seed_keeper", count: 3, initial: "S", color: "var(--moss-light)" },
+                { handle: "nisha.grows", count: 2, initial: "N", color: "var(--bark)" },
+                { handle: "rohan_thinks", count: 2, initial: "R", color: "var(--moss-dark)" },
+                { handle: "zara.designs", count: 1, initial: "Z", color: "var(--amber-soft)" }
+            ];
+
+            // --- State Variables ---
+            let total = 16;
+            let reserveIndex = 0;
+
+            // --- Core Logic & DOM Generation ---
+
+            // Draw Branches
+            branches.forEach(b => {
+                const p = document.createElementNS(NS, 'path');
+                p.setAttribute('d', b.d);
+                p.setAttribute('stroke-width', b.w);
+                branchesG.appendChild(p);
+            });
+
+            // Helper: Create Leaf Element
+            function makeLeaf(x, y, angle, scale, named) {
+                const g = document.createElementNS(NS, 'g');
+                g.setAttribute('class', 'leaf');
+                g.setAttribute('transform', `translate(${x},${y})`);
+
+                if (named) {
+                    g.setAttribute('tabindex', '0');
+                    g.setAttribute('role', 'button');
+                }
+
+                const body = document.createElementNS(NS, 'g');
+                body.setAttribute('class', 'leaf-body');
+                g.appendChild(body);
+
+                const blade = document.createElementNS(NS, 'path');
+                blade.setAttribute('class', 'blade');
+                blade.setAttribute('d', leafPath);
+                blade.setAttribute('transform', `rotate(${angle}) scale(${scale})`);
+                blade.setAttribute('fill', named ? 'var(--moss-light)' : 'var(--moss)');
+                body.appendChild(blade);
+
+                const vein = document.createElementNS(NS, 'path');
+                vein.setAttribute('d', veinPath);
+                vein.setAttribute('transform', `rotate(${angle}) scale(${scale})`);
+                vein.setAttribute('stroke', 'var(--moss-dark)');
+                vein.setAttribute('stroke-width', '1');
+                vein.setAttribute('opacity', '0.5');
+                body.appendChild(vein);
+
+                if (named) {
+                    const text = document.createElementNS(NS, 'text');
+                    text.setAttribute('text-anchor', 'middle');
+                    text.setAttribute('y', '26');
+                    body.appendChild(text);
+                }
+                return g;
+            }
+
+            // Populate Ambient Foliage
+            ambient.forEach(([x, y, a, s]) => {
+                foliageBackG.appendChild(makeLeaf(x, y, a, s, false));
+            });
+
+            // Populate Initial Active Leaves
+            names.forEach((name, i) => {
+                const [x, y] = positions[i];
+                const g = makeLeaf(x, y, angles[i], 1, true);
+                g.dataset.name = name;
+                g.dataset.comment = comments[i];
+                g.querySelector('text').textContent = shortNames[i];
+                attachEvents(g);
+                leavesG.appendChild(g);
+            });
+
+            // Event Handling Setup
+            function attachEvents(g) {
+                function show() {
+                    ttName.textContent = g.dataset.name;
+                    ttComment.textContent = g.dataset.comment;
+                    const r = g.getBoundingClientRect();
+                    tooltip.style.left = (r.left + r.width / 2) + 'px';
+                    tooltip.style.top = (r.top - 6) + 'px';
+                    tooltip.classList.add('show');
+                }
+
+                function hide() {
+                    tooltip.classList.remove('show');
+                }
+
+                g.addEventListener('mouseenter', show);
+                g.addEventListener('mouseleave', hide);
+                g.addEventListener('focus', show);
+                g.addEventListener('blur', hide);
+                g.addEventListener('touchstart', () => {
+                    show();
+                    g.classList.add('active');
+                    setTimeout(() => {
+                        hide();
+                        g.classList.remove('active');
+                    }, 2200);
+                }, { passive: true });
+            }
+
+            // Dynamic Header Engine
+            function refreshHeader() {
+                let cur = STAGES[0], next = STAGES[1] || null;
+                for (let i = 0; i < STAGES.length; i++) {
+                    if (total >= STAGES[i].min) {
+                        cur = STAGES[i];
+                        next = STAGES[i + 1] || null;
+                    }
+                }
+                stageText.textContent = cur.name;
+                countText.textContent = total;
+                milestoneText.textContent = next ? `next milestone ${next.min} leaves` : 'canopy fully grown';
+            }
+            refreshHeader();
+
+            // Simulation Button Trigger
+            simulateBtn.addEventListener('click', () => {
+                total += 1;
+                if (reserveIndex < reserveNames.length) {
+                    const [x, y] = reservePositions[reserveIndex];
+                    const g = makeLeaf(x, y, reserveAngles[reserveIndex], 1, true);
+                    g.dataset.name = reserveNames[reserveIndex];
+                    g.dataset.comment = reserveComments[reserveIndex];
+                    g.querySelector('text').textContent = reserveShort[reserveIndex];
+                    g.querySelector('.leaf-body').classList.add('new-leaf');
+                    attachEvents(g);
+                    leavesG.appendChild(g);
+                    reserveIndex += 1;
+                }
+                refreshHeader();
+            });
+
+            // Render Contributor Feed
+            contributors.forEach(c => {
+                const li = document.createElement('li');
+                li.className = 'contrib-row';
+                li.innerHTML = `<span class="contrib-avatar" style="background:${c.color}">${c.initial}</span>` +
+                    `<span class="contrib-handle">@${c.handle}</span>` +
+                    `<span class="contrib-count"><svg viewBox="0 0 16 16">` +
+                    `<path d="M8,1 C9,5 14,5 14,9 C14,13 10,15 8,15 C6,15 2,13 2,9 C2,5 7,5 8,1 Z" fill="var(--moss-light)" />` +
+                    `</svg>${c.count}</span>`;
+                contribList.appendChild(li);
+            });
+
+            // Starfield Generation
+            for (let i = 0; i < 50; i++) {
+                const s = document.createElement('div');
+                s.className = 'star';
+                const size = 1 + Math.random() * 1.6;
+                s.style.width = size + 'px';
+                s.style.height = size + 'px';
+                s.style.top = (Math.random() * 62) + '%';
+                s.style.left = (Math.random() * 100) + '%';
+                s.style.animationDelay = (Math.random() * 3) + 's';
+                starsEl.appendChild(s);
+            }
+
+            // Phase Configuration (Day / Night Shift)
+            function setPhase(phase) {
+                app.dataset.phase = phase;
+                document.getElementById('phaseLabel').textContent = phase === 'day' ? 'preview night' : 'preview day';
+            }
+
+            const hour = new Date().getHours();
+            setPhase((hour >= 6 && hour < 19) ? 'day' : 'night');
+
+            document.getElementById('phaseToggle').addEventListener('click', () => {
+                setPhase(app.dataset.phase === 'day' ? 'night' : 'day');
+            });
+        })();
+    </script>
+</body>
+
+</html>
