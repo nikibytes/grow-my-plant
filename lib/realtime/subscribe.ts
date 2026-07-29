@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * Client-side realtime subscription. Prefers Server-Sent Events (SSE) against
- * /api/stream/[slug]; on failure transparently falls back to polling the
- * leaves endpoint every few seconds. Returns the latest leaf as it arrives.
+ * Client-side realtime subscription. Uses Server-Sent Events (SSE) for instant
+ * push delivery AND polls /api/campaigns/[slug]/leaves every 5 s as a reliable
+ * safety net. In Next.js dev mode, the in-process SSE hub can't broadcast
+ * across isolated module instances, so polling guarantees updates always arrive.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -19,7 +20,11 @@ export interface LiveLeaf {
   createdAt: string;
 }
 
-export function usePlantStream(slug: string, onLeaf: (leaf: LiveLeaf) => void) {
+export function usePlantStream(
+  slug: string,
+  onLeaf: (leaf: LiveLeaf) => void,
+  initialLeafIds?: string[],
+) {
   const [connected, setConnected] = useState(false);
   const onLeafRef = useRef(onLeaf);
   onLeafRef.current = onLeaf;
@@ -29,26 +34,30 @@ export function usePlantStream(slug: string, onLeaf: (leaf: LiveLeaf) => void) {
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
 
-    const startPolling = (knownIds: Set<string>) => {
-      pollTimer = setInterval(async () => {
-        try {
-          const res = await fetch(`/api/campaigns/${slug}/leaves`);
-          const data = await res.json();
-          if (cancelled || !Array.isArray(data.leaves)) return;
-          for (const l of data.leaves as LiveLeaf[]) {
-            if (!knownIds.has(l.id)) {
-              knownIds.add(l.id);
-              onLeafRef.current(l);
-            }
+    // Seed with IDs already rendered server-side so we don't re-fire them.
+    const knownIds = new Set<string>(initialLeafIds ?? []);
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/campaigns/${slug}/leaves`);
+        const data = await res.json();
+        if (cancelled || !Array.isArray(data.leaves)) return;
+        for (const l of data.leaves as LiveLeaf[]) {
+          if (!knownIds.has(l.id)) {
+            knownIds.add(l.id);
+            onLeafRef.current(l);
           }
-        } catch {
-          /* ignore, will retry */
         }
-      }, 5000);
+      } catch {
+        /* ignore, will retry next tick */
+      }
     };
 
-    const knownIds = new Set<string>();
+    // Always poll every 2.5 s — works even when SSE broadcast is broken in dev.
+    poll();
+    pollTimer = setInterval(poll, 2500);
 
+    // Also try SSE for instant push when it works (production / single process).
     try {
       es = new EventSource(`/api/stream/${slug}`);
       es.addEventListener("ready", () => !cancelled && setConnected(true));
@@ -56,8 +65,10 @@ export function usePlantStream(slug: string, onLeaf: (leaf: LiveLeaf) => void) {
         if (cancelled) return;
         try {
           const leaf = JSON.parse((e as MessageEvent).data) as LiveLeaf;
-          knownIds.add(leaf.id);
-          onLeafRef.current(leaf);
+          if (!knownIds.has(leaf.id)) {
+            knownIds.add(leaf.id);
+            onLeafRef.current(leaf);
+          }
         } catch {
           /* ignore malformed */
         }
@@ -67,10 +78,9 @@ export function usePlantStream(slug: string, onLeaf: (leaf: LiveLeaf) => void) {
         setConnected(false);
         es?.close();
         es = null;
-        startPolling(knownIds);
       };
     } catch {
-      startPolling(knownIds);
+      /* EventSource not supported — polling handles it */
     }
 
     return () => {
@@ -78,6 +88,7 @@ export function usePlantStream(slug: string, onLeaf: (leaf: LiveLeaf) => void) {
       es?.close();
       if (pollTimer) clearInterval(pollTimer);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 
   return { connected };
