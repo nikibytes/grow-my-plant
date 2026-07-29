@@ -78,7 +78,7 @@ function Trunk({ stage }: { stage: string }) {
     "small-plant": 30,
     "branched-plant": 48,
     "young-tree": 64,
-    "flowering-tree": 78,
+    "flowering-tree": 95,
     "community-tree": 92,
     "magical-tree": 104,
     forest: 116,

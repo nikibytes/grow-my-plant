@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
 import { usePlantStream, type LiveLeaf } from "@/lib/realtime/subscribe";
 import { hashString } from "@/lib/leaves/calculateLeafStyle";
 import {
@@ -12,9 +12,21 @@ import type { GrowthStage } from "@/lib/plant/growthStagesTypes";
 import { STAGE_SKELETONS } from "@/lib/plant/stageSkeletons";
 import { STAGE_SIZES } from "@/lib/plant/stageSizes";
 import { placeLeaves } from "@/lib/plant/leafPlacement";
+import { PixelBunny } from "./PixelBunny";
 
 const FULL_VIEWBOX = { x: 0, y: 0, w: 640, h: 700 };
 const ZOOM_HALF = 95; // half-size of the zoomed square around a leaf
+
+// Fixed trunk anchor point — all stages are translated to this in the unified viewBox.
+const ANCHOR_X = 521;
+const ANCHOR_Y = 1008;
+const UNIFIED_VW = 1043;
+const UNIFIED_VH = 1088;
+
+const STAGE_MAX_LEVELS = GROWTH_STAGES.map((s) => {
+  const branches = STAGE_SKELETONS[s.id] ?? [];
+  return branches.reduce((max, b) => Math.max(max, b.level), 0);
+});
 
 // ── Locked scene geometry (from sampleUI.html — do not redesign) ──
 const LEAF_PATH = "M0,-14 C7,-9 8,3 0,15 C-8,3 -7,-9 0,-14 Z";
@@ -23,11 +35,22 @@ const VEIN_PATH = "M0,-11 L0,11";
 // All leaf slots for the active stage: deterministic placement along that
 // stage's branch skeleton (see lib/plant/leafPlacement.ts). SAME count + stage
 // => SAME positions, so search/zoom and refresh are stable.
-function allSlotsForStage(stage: GrowthStage, count: number) {
-  const branches = STAGE_SKELETONS[stage.id] ?? [];
-  if (branches.length === 0) return stage.slots.slice(0, count);
+// All leaf slots for the active stage in the UNIFIED viewBox coordinate space.
+// dx/dy are the same offsets applied to the branch <g> to anchor trunk position.
+function allSlotsForStage(stage: GrowthStage, count: number, dx: number, dy: number) {
+  const allBranches = STAGE_SKELETONS[stage.id] ?? [];
+  if (allBranches.length === 0) {
+    // legacy slots: translate them too
+    return stage.slots.slice(0, count).map((s) => ({ ...s, x: s.x + dx, y: s.y + dy }));
+  }
+  // Filter out root/base branches (level 0 and 1) — they are underground anchors,
+  // not foliage branches, so leaves should never be placed on them.
+  const foliageBranches = allBranches.filter((b) => b.level >= 2);
   const size = STAGE_SIZES[stage.id];
-  return placeLeaves(branches, count, 0, { vh: size?.vh, soilBand: 44 });
+  // Increase soilBand significantly so leaves can't appear near the ground level.
+  const raw = placeLeaves(foliageBranches, count, 0, { vh: size?.vh, soilBand: 120, canopy: stage.canopy });
+  // Apply the same stage-specific translate offset so leaves align with translated branches
+  return raw.map((s) => ({ ...s, x: s.x + dx, y: s.y + dy }));
 }
 
 const AVATAR_COLORS = [
@@ -79,6 +102,7 @@ function GardenLeaf({
   shortName,
   isNew,
   found,
+  isFlower,
   onEnter,
   onLeave,
 }: {
@@ -91,6 +115,7 @@ function GardenLeaf({
   shortName: string;
   isNew: boolean;
   found: boolean;
+  isFlower: boolean;
   onEnter: (e: React.MouseEvent<SVGGElement> | React.FocusEvent<SVGGElement>) => void;
   onLeave: () => void;
 }) {
@@ -108,23 +133,38 @@ function GardenLeaf({
       onFocus={onEnter}
       onBlur={onLeave}
     >
-      <circle className="leaf-halo" r={28} />
+      <circle className="leaf-halo" r={34} />
       <g className={isNew ? "leaf-body new-leaf" : "leaf-body"}>
-        <path
-          className="blade"
-          d={LEAF_PATH}
-          transform={`rotate(${angle}) scale(1)`}
-          fill="var(--moss-light)"
-        />
-        <path
-          d={VEIN_PATH}
-          transform={`rotate(${angle}) scale(1)`}
-          stroke="var(--moss-dark)"
-          strokeWidth={1}
-          opacity={0.5}
-          fill="none"
-        />
-        <text textAnchor="middle" y={found ? 30 : 26}>
+        <g transform="scale(1.35)">
+          {isFlower ? (
+            <g className="flower-blade" style={{ "--angle": `${angle}deg` } as React.CSSProperties}>
+              <circle cx="0" cy="-6" r="4.5" fill="#f472b6" />
+              <circle cx="5.7" cy="-1.8" r="4.5" fill="#f472b6" />
+              <circle cx="3.5" cy="4.8" r="4.5" fill="#f472b6" />
+              <circle cx="-3.5" cy="4.8" r="4.5" fill="#f472b6" />
+              <circle cx="-5.7" cy="-1.8" r="4.5" fill="#f472b6" />
+              <circle cx="0" cy="0" r="2.5" fill="#fde047" />
+            </g>
+          ) : (
+            <>
+              <path
+                className="blade"
+                d={LEAF_PATH}
+                style={{ "--angle": `${angle}deg` } as React.CSSProperties}
+                fill="var(--moss-light)"
+              />
+              <path
+                d={VEIN_PATH}
+                transform={`rotate(${angle})`}
+                stroke="var(--moss-dark)"
+                strokeWidth={1}
+                opacity={0.5}
+                fill="none"
+              />
+            </>
+          )}
+        </g>
+        <text textAnchor="middle" y={found ? 36 : 32}>
           {found ? name : shortName}
         </text>
       </g>
@@ -145,6 +185,22 @@ export function CommentGarden({
   const [leaves, setLeaves] = useState<GardenLeafData[]>(initialLeaves);
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const [tooltip, setTooltip] = useState<{ name: string; comment: string; x: number; y: number } | null>(null);
+  const [bunnyActive, setBunnyActive] = useState(false);
+
+  // Bunny timer: hops across screen every 30 minutes, plus initial 3s preview on load
+  useEffect(() => {
+    const initialTimer = setTimeout(() => setBunnyActive(true), 3000);
+    const interval = setInterval(() => setBunnyActive(true), 30 * 60 * 1000);
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, []);
+
+  const triggerBunny = () => {
+    setBunnyActive(false);
+    setTimeout(() => setBunnyActive(true), 50);
+  };
 
   // ── Search / zoom-to-leaf ──
   const [query, setQuery] = useState("");
@@ -200,24 +256,38 @@ export function CommentGarden({
     next: upcoming ? { min: upcoming.minComments } : null,
   };
 
-  // All leaf positions for the active stage, recomputed when stage or count changes.
-  const slots = useMemo(
-    () => allSlotsForStage(activeStage, total),
-    [activeStage, total]
-  );
+  // animationKey increments each time the active stage changes.
+  // Giving the active <image> a key that includes this value forces React to
+  // remount it, which restarts the CSS stage-grow animation for that image only.
+  const [animationKey, setAnimationKey] = useState(0);
+  const prevStageIdRef = useRef(activeStage.id);
+  useLayoutEffect(() => {
+    if (prevStageIdRef.current !== activeStage.id) {
+      prevStageIdRef.current = activeStage.id;
+      setAnimationKey((k) => k + 1);
+    }
+  }, [activeStage.id]);
 
-  // viewBox for the active stage (its own canvas size so nothing is cropped).
-  const viewBox = useMemo(() => {
-    const s = STAGE_SIZES[activeStage.id];
-    return s ? `0 0 ${s.vw} ${s.vh}` : "0 0 640 700";
-  }, [activeStage]);
+  // Offset for the currently active stage’s coordinate space into the unified space
+  const activeStageDx = ANCHOR_X - (STAGE_SIZES[activeStage.id]?.baseX ?? ANCHOR_X);
+  const activeStageDy = ANCHOR_Y - (STAGE_SIZES[activeStage.id]?.baseY ?? ANCHOR_Y);
+
+  // All leaf positions for the active stage, recomputed when stage or count changes.
+  // Slots are already offset by (activeStageDx, activeStageDy) into the unified space.
+  const slots = useMemo(
+    () => allSlotsForStage(activeStage, total, activeStageDx, activeStageDy),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeStage, total, activeStageDx, activeStageDy]
+  );
 
   // Live contributors: most recent 5 unique usernames.
   const contributors = useMemo(() => {
+
     const seen = new Map<string, number>();
     for (const l of ordered) seen.set(l.username, (seen.get(l.username) ?? 0) + 1);
     return [...seen.entries()].slice(-5).reverse();
   }, [ordered]);
+
 
   // Initial phase from time of day
   useEffect(() => {
@@ -284,12 +354,11 @@ export function CommentGarden({
     []
   );
 
-  // Reset zoom to the full tree and clear the focus.
+  // Reset zoom to the full unified viewBox.
   const resetZoom = useCallback(() => {
     setFocusedId(null);
-    const s = STAGE_SIZES[activeStage.id];
-    animateViewBox(s ? { x: 0, y: 0, w: s.vw, h: s.vh } : FULL_VIEWBOX);
-  }, [animateViewBox, activeStage]);
+    animateViewBox({ x: 0, y: 0, w: UNIFIED_VW, h: UNIFIED_VH });
+  }, [animateViewBox]);
 
   // Find a leaf by username and zoom the viewBox onto its slot.
   const runSearch = useCallback(
@@ -310,15 +379,13 @@ export function CommentGarden({
       if (idx === -1) {
         setSearchMiss(true);
         setFocusedId(null);
-        const s = STAGE_SIZES[activeStage.id];
-        animateViewBox(s ? { x: 0, y: 0, w: s.vw, h: s.vh } : FULL_VIEWBOX);
+        animateViewBox({ x: 0, y: 0, w: UNIFIED_VW, h: UNIFIED_VH });
         return;
       }
       setSearchMiss(false);
       const leaf = ordered[idx];
       const slot = slots[idx];
-      const vw = STAGE_SIZES[activeStage.id]?.vw ?? 640;
-      const zoomHalf = Math.round(vw * 0.14); // ~28% of width in view
+      const zoomHalf = Math.round(UNIFIED_VW * 0.14); // ~28% of width in view
       setFocusedId(leaf.id);
       animateViewBox({
         x: slot.x - zoomHalf,
@@ -423,7 +490,41 @@ export function CommentGarden({
             <line x1="10" y1="2" x2="10" y2="14" stroke="#241C12" strokeWidth="1" />
           </svg>
         </div>
-        <div className="ladybug">
+        {/* 4 Ladybugs wandering around ground & hills */}
+        <div className="ladybug l1">
+          <svg viewBox="0 0 18 14">
+            <ellipse cx="9" cy="8" rx="8" ry="6" fill="#C0392B" />
+            <path d="M9,2 L9,14" stroke="#241C12" strokeWidth="1" />
+            <circle cx="9" cy="4" r="3" fill="#241C12" />
+            <circle cx="5" cy="7" r="1.2" fill="#241C12" />
+            <circle cx="13" cy="7" r="1.2" fill="#241C12" />
+            <circle cx="6" cy="11" r="1.1" fill="#241C12" />
+            <circle cx="12" cy="11" r="1.1" fill="#241C12" />
+          </svg>
+        </div>
+        <div className="ladybug l2">
+          <svg viewBox="0 0 18 14">
+            <ellipse cx="9" cy="8" rx="8" ry="6" fill="#E74C3C" />
+            <path d="M9,2 L9,14" stroke="#241C12" strokeWidth="1" />
+            <circle cx="9" cy="4" r="3" fill="#241C12" />
+            <circle cx="5" cy="7" r="1.2" fill="#241C12" />
+            <circle cx="13" cy="7" r="1.2" fill="#241C12" />
+            <circle cx="6" cy="11" r="1.1" fill="#241C12" />
+            <circle cx="12" cy="11" r="1.1" fill="#241C12" />
+          </svg>
+        </div>
+        <div className="ladybug l3">
+          <svg viewBox="0 0 18 14">
+            <ellipse cx="9" cy="8" rx="8" ry="6" fill="#D35400" />
+            <path d="M9,2 L9,14" stroke="#241C12" strokeWidth="1" />
+            <circle cx="9" cy="4" r="3" fill="#241C12" />
+            <circle cx="5" cy="7" r="1.2" fill="#241C12" />
+            <circle cx="13" cy="7" r="1.2" fill="#241C12" />
+            <circle cx="6" cy="11" r="1.1" fill="#241C12" />
+            <circle cx="12" cy="11" r="1.1" fill="#241C12" />
+          </svg>
+        </div>
+        <div className="ladybug l4">
           <svg viewBox="0 0 18 14">
             <ellipse cx="9" cy="8" rx="8" ry="6" fill="#C0392B" />
             <path d="M9,2 L9,14" stroke="#241C12" strokeWidth="1" />
@@ -435,6 +536,9 @@ export function CommentGarden({
           </svg>
         </div>
       </div>
+
+      {/* Animated Pixel Bunny */}
+      <PixelBunny />
 
       <div className="leaf-search">
         <form
@@ -492,6 +596,10 @@ export function CommentGarden({
           <span>{total}</span> leaves grown &middot;{" "}
           <span>{stage.next ? `next milestone ${stage.next.min} leaves` : "canopy fully grown"}</span>
         </p>
+        <div className="cta-box">
+          <span className="cta-icon">🌱</span>
+          <span className="cta-text">Leave a comment to see the tree grow live!</span>
+        </div>
       </div>
 
       <div className="contrib-card">
@@ -532,9 +640,14 @@ export function CommentGarden({
           <span>{phase === "day" ? "preview night" : "preview day"}</span>
         </button>
         {isDev && (
-          <button className="ctrl-btn" onClick={simulate}>
-            + simulate a comment
-          </button>
+          <>
+            <button className="ctrl-btn" onClick={simulate}>
+              + simulate a comment
+            </button>
+            <button className="ctrl-btn" onClick={triggerBunny}>
+              🐇 preview bunny
+            </button>
+          </>
         )}
       </div>
 
@@ -574,29 +687,90 @@ export function CommentGarden({
           ref={svgRef}
           id="plant"
           className={focusedId ? "has-focus" : undefined}
-          viewBox={viewBox}
+          viewBox={`0 0 ${UNIFIED_VW} ${UNIFIED_VH}`}
           role="img"
           aria-label="An illustrated tree whose leaves each carry the name of someone who commented"
         >
-          <ellipse cx="320" cy="672" rx="150" ry="16" fill="#000" opacity="0.12" />
-          {/* Growth-stage tree art (transparent PNG, trunk base at 320,660).
-              Cross-fades when the stage changes as leaves accumulate. */}
-          {GROWTH_STAGES.map((s) => (
-            <image
-              key={s.id}
-              href={s.img}
-              x={0}
-              y={0}
-              width={STAGE_SIZES[s.id]?.vw ?? 640}
-              height={STAGE_SIZES[s.id]?.vh ?? 700}
-              preserveAspectRatio="none"
-              className="stage-img"
-              style={{
-                opacity: s.id === activeStage.id ? 1 : 0,
-                transformOrigin: `${(STAGE_SIZES[s.id]?.baseX ?? 320)}px ${(STAGE_SIZES[s.id]?.baseY ?? 660)}px`,
-              }}
-            />
-          ))}
+          {/* Shadow ellipse anchored at the fixed trunk base */}
+          <ellipse cx={ANCHOR_X} cy={ANCHOR_Y + 8} rx="180" ry="18" fill="#000" opacity="0.12" />
+          {/* Growth-stage tree art — each stage is translated so its own baseX/baseY
+              aligns with the fixed ANCHOR point, keeping the trunk rooted in one place. */}
+          {GROWTH_STAGES.map((s, stageIndex) => {
+            const isActive = s.id === activeStage.id;
+            const sz = STAGE_SIZES[s.id];
+            const branches = STAGE_SKELETONS[s.id] ?? [];
+            const prevMaxLevel = stageIndex === 0 ? -1 : STAGE_MAX_LEVELS[stageIndex - 1];
+            // Translate this stage so its trunk base sits exactly on the fixed anchor point
+            const dx = ANCHOR_X - (sz?.baseX ?? ANCHOR_X);
+            const dy = ANCHOR_Y - (sz?.baseY ?? ANCHOR_Y);
+
+            return (
+              <g
+                key={isActive ? `${s.id}-${animationKey}` : s.id}
+                className={isActive ? "stage-branches active" : "stage-branches"}
+                style={{ opacity: isActive ? 1 : 0 }}
+                transform={`translate(${dx}, ${dy})`}
+              >
+                {/* 
+                  // KEEPING OLD IMAGE CODE COMMENTED OUT AS REQUESTED
+                  <image
+                    href={s.img}
+                    x={0}
+                    y={0}
+                    width={sz?.vw ?? 640}
+                    height={sz?.vh ?? 700}
+                    preserveAspectRatio="none"
+                    className={isActive ? "stage-img active" : "stage-img"}
+                    style={{
+                      opacity: isActive ? 1 : 0,
+                      transformOrigin: `${sz?.baseX ?? 320}px ${sz?.baseY ?? 660}px`,
+                    }}
+                  />
+                */}
+                {branches.map((b, i) => {
+                  // Trunk thickness scales up with each stage (2px extra per stage at the base).
+                  // stageIndex 0 = stage-1 (sapling), stageIndex 5 = stage-6 (full tree).
+                  const trunkBase = 8 + stageIndex * 2; // 8 → 18 across 6 stages
+                  const strokeW = Math.max(1.5, trunkBase - b.level * 0.5);
+                  const segLen = Math.hypot(b.x2 - b.x1, b.y2 - b.y1);
+                  // Approximate path length (slightly longer than straight line for bezier)
+                  const pathLen = segLen * 1.06;
+
+                  // Organic curve: offset the control point perpendicularly by ~8% of length.
+                  // Use branch index parity to alternate curve direction naturally.
+                  const mx = (b.x1 + b.x2) / 2;
+                  const my = (b.y1 + b.y2) / 2;
+                  const perpX = -(b.y2 - b.y1) / segLen;
+                  const perpY =  (b.x2 - b.x1) / segLen;
+                  const curveMag = segLen * 0.08 * (i % 2 === 0 ? 1 : -1);
+                  const cpX = mx + perpX * curveMag;
+                  const cpY = my + perpY * curveMag;
+                  const d = `M ${b.x1} ${b.y1} Q ${cpX} ${cpY} ${b.x2} ${b.y2}`;
+
+                  // Consider branches close to or exceeding the previous stage's max level as new growth
+                  const isNewGrowth = b.level >= Math.max(0, prevMaxLevel - 2);
+                  const animStyle = isNewGrowth ? {
+                    strokeDasharray: pathLen,
+                    strokeDashoffset: pathLen,
+                    animationDelay: `${Math.max(0, b.level - prevMaxLevel + 2) * 0.15}s`,
+                  } : {};
+
+                  return (
+                    <path
+                      key={i}
+                      d={d}
+                      stroke="var(--bark)"
+                      strokeWidth={strokeW}
+                      strokeLinecap="round"
+                      fill="none"
+                      style={animStyle}
+                      className={isNewGrowth ? "new-branch" : "old-branch"}
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
           <g id="leaves">
             {ordered.map((leaf, i) => {
               const slot = slots[i];
@@ -612,6 +786,7 @@ export function CommentGarden({
                   shortName={shortNameOf(leaf.username)}
                   isNew={newIds.has(leaf.id)}
                   found={focusedId === leaf.id}
+                  isFlower={i >= 79 && i % 5 === 4}
                   onEnter={showTip}
                   onLeave={hideTip}
                 />

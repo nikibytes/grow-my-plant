@@ -50,7 +50,7 @@ export function PlantClient({
     window.setTimeout(() => setLatestLeafId(null), 5000);
   }, []);
 
-  const { connected } = usePlantStream(slug, onLeaf);
+  const { connected } = usePlantStream(slug, onLeaf, initialLeaves.map((l) => l.id));
 
   const total = leaves.length;
   const stage = useMemo(() => {
@@ -93,9 +93,8 @@ export function PlantClient({
 
       <div className="mt-4 flex justify-center">
         <span
-          className={`rounded-full px-3 py-1 text-[11px] font-medium ${
-            connected ? "bg-leaf/15 text-leaf-dark" : "bg-amber-100 text-amber-800"
-          }`}
+          className={`rounded-full px-3 py-1 text-[11px] font-medium ${connected ? "bg-leaf/15 text-leaf-dark" : "bg-amber-100 text-amber-800"
+            }`}
         >
           {connected ? "● Live updates on" : "○ Live paused (polling)"}
         </span>
