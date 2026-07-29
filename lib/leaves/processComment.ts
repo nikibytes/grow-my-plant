@@ -37,7 +37,12 @@ export async function processComment(input: CommentInput): Promise<CreateLeafOut
   const repo = getRepo();
 
   // 1. Find the active campaign for the target media.
-  const campaign: Campaign | null = await repo.getActiveCampaignByMediaId(input.mediaId);
+  let campaign: Campaign | null = await repo.getActiveCampaignByMediaId(input.mediaId);
+  if (!campaign) {
+    // Fallback: if target media ID isn't specifically mapped, find the default active campaign
+    const campaigns = await repo.listCampaigns();
+    campaign = campaigns.find((c) => c.isActive) ?? null;
+  }
   if (!campaign) {
     return { ignored: true, reason: "unknown-media" };
   }

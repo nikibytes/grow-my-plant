@@ -11,10 +11,14 @@
 
 import type { InstagramCommentEvent } from "@/lib/types";
 
+interface RawMedia {
+  id?: string;
+}
 interface RawChange {
   field?: string;
   value?: {
     media_id?: string;
+    media?: RawMedia; // real Meta payload nests media under `media.id`
     comment_id?: string;
     id?: string; // sometimes the comment id sits here
     text?: string;
@@ -22,6 +26,7 @@ interface RawChange {
     username?: string;
     sender?: { id?: string; username?: string };
     timestamp?: string;
+    parent_id?: string;
   };
 }
 
@@ -55,21 +60,38 @@ export function parseCommentEvents(payload: unknown): InstagramCommentEvent[] {
   const p = payload as RawPayload;
   const events: InstagramCommentEvent[] = [];
 
-  for (const entry of p.entry ?? []) {
-    for (const change of entry.changes ?? []) {
-      if (change.field !== "comments" && change.field !== "comment") continue;
-      const v = change.value;
-      if (!v) continue;
-
-      const mediaId = v.media_id ?? entry.id ?? "";
-      const commentId = v.comment_id ?? v.id ?? "";
-      const { userId, username } = extractAuthor(v);
-      const text = v.text ?? "";
-
-      if (!commentId || !username) continue; // need both to act
-
-      events.push({ commentId, userId, username, text, mediaId });
+  // Normalize to an array of change values. The live Meta envelope is
+  // entry[].changes[].value, but a bare `value` object (e.g. a single
+  // comment snippet) is also accepted for testing.
+  const changes: RawChange[] = [];
+  if (Array.isArray(p.entry)) {
+    for (const entry of p.entry) {
+      for (const change of entry.changes ?? []) {
+        if (change.field !== "comments" && change.field !== "comment") continue;
+        if (change.value) changes.push(change);
+      }
     }
+  } else {
+    // bare value payload: treat the whole object as one comment `value`
+    const v = p as unknown as RawChange["value"];
+    if (v && (v.comment_id || (v as { id?: string }).id)) {
+      changes.push({ field: "comments", value: v });
+    }
+  }
+
+  for (const change of changes) {
+    const v = change.value!;
+    // Real Meta payload nests media under value.media.id; older stubs use
+    // value.media_id. Fall back to entry.id only if neither is present.
+    const mediaId =
+      v.media_id ?? v.media?.id ?? p.entry?.[0]?.id ?? "";
+    const commentId = v.comment_id ?? v.id ?? "";
+    const { userId, username } = extractAuthor(v);
+    const text = v.text ?? "";
+
+    if (!commentId || !username) continue; // need both to act
+
+    events.push({ commentId, userId, username, text, mediaId });
   }
   return events;
 }

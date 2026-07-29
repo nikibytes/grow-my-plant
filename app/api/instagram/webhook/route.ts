@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyWebhook } from "@/lib/instagram/verifyWebhook";
+import { verifyWebhook, verifySignature } from "@/lib/instagram/verifyWebhook";
 
 // GET → Meta verification handshake
 export async function GET(req: NextRequest) {
@@ -18,18 +18,26 @@ export async function GET(req: NextRequest) {
 
 // POST → incoming comment events. We ACK fast and process asynchronously.
 export async function POST(req: NextRequest) {
+  // 1. Verify the Meta signature BEFORE parsing/processing (AC1).
+  const raw = await req.text();
+  const sig = req.headers.get("x-hub-signature-256");
+  if (!verifySignature(raw, sig)) {
+    return new NextResponse("invalid signature", { status: 401 });
+  }
+
+  // 2. Parse the verified body.
   let body: unknown;
   try {
-    body = await req.json();
+    body = JSON.parse(raw);
   } catch {
     return new NextResponse("invalid json", { status: 400 });
   }
 
   // Fire-and-forget the actual processing so we return 200 immediately.
-  void handleAsync(body);
+  const result = await handleAsync(body);
 
   // Meta just needs a 200 quickly.
-  return new NextResponse("ok", { status: 200 });
+  return new NextResponse(result.msg, { status: result.status });
 }
 
 async function handleAsync(body: unknown) {
@@ -48,12 +56,15 @@ async function handleAsync(body: unknown) {
           text: ev.text,
           mediaId: ev.mediaId,
         });
+
       } catch (err) {
         await repo.markEventStatus(ev.commentId, "failed", String(err));
       }
     }
+    return { status: 200, msg: 'ok' };
   } catch (err) {
     // Top-level failure — log but never crash the webhook responder.
     console.error("[webhook] processing failed", err);
+    return { status: 500, msg: 'internal error' };
   }
 }
