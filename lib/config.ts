@@ -15,8 +15,14 @@ export const config = {
 
   adminSecret: process.env.ADMIN_SECRET ?? "dev-secret",
   instagramVerifyToken: process.env.INSTAGRAM_VERIFY_TOKEN ?? "dev-verify-token",
+  // App secret (Meta App → Settings → Basic). Used to verify the
+  // X-Hub-Signature-256 HMAC on incoming webhook POSTs. MUST be set in prod.
+  instagramAppSecret: process.env.INSTAGRAM_APP_SECRET ?? "",
   instagramTargetMediaId: process.env.INSTAGRAM_TARGET_MEDIA_ID ?? "",
   instagramPermalink: process.env.INSTAGRAM_PERMALINK ?? "https://www.instagram.com/",
+  // Public base URL where Meta delivers webhooks, e.g. the ngrok URL in dev
+  // or the deployed app URL. Used only when (re)subscribing the webhook.
+  instagramWebhookBaseUrl: process.env.INSTAGRAM_WEBHOOK_BASE_URL ?? "",
 
   isProd: process.env.NODE_ENV === "production",
 } as const;
